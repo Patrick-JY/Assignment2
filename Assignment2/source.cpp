@@ -1,9 +1,12 @@
 //was having some trouble with includes (string was apparently being defined twice) 
 //so this is taken from lab 5
+#define _USE_MATH_DEFINES
 #include <cstdio>		// for C++ i/o
 #include <iostream>
 #include <string>
 #include <cstddef>
+#include <math.h>
+
 using namespace std;	// to avoid having to use std::
 
 #include <GLEW/glew.h>	// include GLEW
@@ -17,8 +20,14 @@ using namespace glm;	// to avoid having to use glm::
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "shader.h"
-//structs
+//definitions
+#define CIRCLE_SLICES 64
+#define MAX_VERTICES (CIRCLE_SLICES) * 3
 
+
+
+
+//structs
 //vertex stuct
 typedef struct Vertex
 {
@@ -34,24 +43,60 @@ typedef struct Mesh
 } Mesh;
 
 //Global Vars
+const int vbo_vao_number = 7; //needed to make sure I clean up everything properly
 
-Mesh g_mesh;
-GLuint g_VBO = 0;
-GLuint g_VAO = 0;
+Mesh nucleusMesh;
+Mesh electronMesh[3];
+Mesh orbitPathMesh[3]; 
+GLuint g_VBO[vbo_vao_number];
+GLuint g_VAO[vbo_vao_number];
 GLuint g_shaderProgramID = 0;
 GLuint g_MVP_Index = 0;
-glm::mat4 g_modelMatrix;
+glm::mat4 nucleusMatrix;
+glm::mat4 electronMatrixArray[3]; //making these an array because it seems more convenient
+glm::mat4 orbitPathsMatrixArray[3]; //same ^
 glm::mat4 g_viewMatrix;
 glm::mat4 g_projectionMatrix;
 
 GLuint g_windowWidth = 800; //window dimensions
 GLuint g_windowHeight = 600;
 
-float g_scale = 1.0f;
-float g_rotateAngleX = 0.0f;
-float g_rotateAngleY = 0.0f;
+float electronScale = 0.2f;
 
 bool wireFrame = false;
+
+bool draw_orbit(Mesh* mesh,float centre_x , float centre_y, float centre_z) {
+	
+	
+	mesh->pMeshVertices = new Vertex[MAX_VERTICES];
+	mesh->numberOfVertices = MAX_VERTICES;
+	float scale_factor = static_cast<float>(g_windowHeight) / g_windowWidth;
+	
+	
+	
+	for (int i = 0; i < MAX_VERTICES;i++) {
+		float angle = ((float)M_PI * 2.0f * (float)i) / float(CIRCLE_SLICES);
+		
+
+		//drawing the circle
+		mesh->pMeshVertices[i].position[0] = 2.0f * cos(angle);
+		mesh->pMeshVertices[i].position[2] = 2.0f * sin(angle);
+		mesh->pMeshVertices[i].position[1] = 0.0f;
+		
+		//setting the color of the vertices
+		mesh->pMeshVertices[i].color[0] = 1.0f;
+		mesh->pMeshVertices[i].color[1] = 0.0f;
+		mesh->pMeshVertices[i].color[2] = 0.0f;
+		cout << "x:";
+		cout << mesh->pMeshVertices[i].position[0] << " ";
+		cout << "y:";
+		cout << mesh->pMeshVertices[i].position[1] << endl;
+		
+	}
+	
+	return true;
+}
+
 
 //mesh load function as seen in tuts
 bool load_mesh(const char* fileName, Mesh* mesh) {
@@ -112,8 +157,14 @@ static void init(GLFWwindow* window) {
 	g_MVP_Index = glGetUniformLocation(g_shaderProgramID, "uModelViewProjectionMatrix");
 
 
-	//init model matrix
-	g_modelMatrix = mat4(1.0f);
+	//init model matrices
+	nucleusMatrix = mat4(1.0f);
+	electronMatrixArray[0] = mat4(1.0f);
+	electronMatrixArray[1] = mat4(1.0f);
+	electronMatrixArray[2] = mat4(1.0f);
+	orbitPathsMatrixArray[0] = mat4(1.0f);
+	orbitPathsMatrixArray[1] = mat4(1.0f);
+	orbitPathsMatrixArray[2] = mat4(1.0f);
 
 	//init view matrix
 	g_viewMatrix = lookAt(vec3(0.0f, 0.0f, 6.0f), vec3(0.0f, 0.0f, 5.0f), vec3(0.0f, 1.0f, 0.0f));
@@ -126,21 +177,24 @@ static void init(GLFWwindow* window) {
 
 	//initialise projection matrix
 	g_projectionMatrix = perspective(radians(45.0f), aspectRatio, 0.1f, 100.0f);
-	//load Mesh
-	g_mesh.pMeshVertices = NULL;
-	load_mesh("models/sphere.obj", &g_mesh);
+	//initialise vbo and vao
+	glGenBuffers(vbo_vao_number, g_VBO);
+	glGenVertexArrays(vbo_vao_number, g_VAO);
+	
+	
+	
 
-	//generate identifier for VBOs and copy data to GPU
-	glGenBuffers(1, &g_VBO);
-	glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * g_mesh.numberOfVertices, g_mesh.pMeshVertices, GL_STATIC_DRAW);
 
-	// generate identifiers for VAO
-	glGenVertexArrays(1, &g_VAO);
+	//Creating the nucleus
+	
+	//load nucleus Mesh
+	nucleusMesh.pMeshVertices = NULL;
+	load_mesh("models/sphere.obj", &nucleusMesh);
 
-	// create VAO and specify VBO data
-	glBindVertexArray(g_VAO);
-	glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+
+	glBindVertexArray(g_VAO[0]);
+	glBindBuffer(GL_ARRAY_BUFFER, g_VBO[0]);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * nucleusMesh.numberOfVertices, nucleusMesh.pMeshVertices, GL_STATIC_DRAW);
 
 
 	glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
@@ -149,6 +203,43 @@ static void init(GLFWwindow* window) {
 	glEnableVertexAttribArray(positionIndex); // enable vertex attributes
 	glEnableVertexAttribArray(colorIndex);
 
+
+
+
+	//creating electrons
+	//load electron Meshes
+
+	for (int i = 0; i < 3; i++) {
+		electronMesh[i].pMeshVertices = NULL;
+		load_mesh("models/sphere.obj", &electronMesh[i]);
+
+		glBindVertexArray(g_VAO[i+1]);
+		glBindBuffer(GL_ARRAY_BUFFER, g_VBO[i+1]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * electronMesh[i].numberOfVertices, electronMesh[i].pMeshVertices, GL_STATIC_DRAW);
+
+
+		glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
+		glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+
+		glEnableVertexAttribArray(positionIndex); // enable vertex attributes
+		glEnableVertexAttribArray(colorIndex);
+	}
+
+
+	//orbit Paths
+	orbitPathMesh[0].pMeshVertices = NULL;
+	draw_orbit(&orbitPathMesh[0], 0.0f, 0.0f, 0.0f);
+	glBindVertexArray(g_VAO[4]);
+	glBindBuffer(GL_ARRAY_BUFFER, g_VBO[4]);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * orbitPathMesh[0].numberOfVertices, orbitPathMesh[0].pMeshVertices, GL_STATIC_DRAW);
+	
+	glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
+	glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+
+	glEnableVertexAttribArray(positionIndex); // enable vertex attributes
+	glEnableVertexAttribArray(colorIndex);
+
+
 }
 
 
@@ -156,9 +247,11 @@ static void init(GLFWwindow* window) {
 
 static void update_scene() {
 	
-	g_modelMatrix = glm::rotate(glm::radians(g_rotateAngleX), glm::vec3(1.0f, 0.0f, 0.0f))
-		* glm::rotate(glm::radians(g_rotateAngleY), glm::vec3(0.0f, 1.0f, 0.0f))
-		* glm::scale(glm::vec3(g_scale, g_scale, g_scale));
+	//currently moves the electrons to where they start in the scene
+	electronMatrixArray[0] = glm::translate(vec3(2.0f, 1.0f, 0.0f))* glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
+	electronMatrixArray[1] = glm::translate(vec3(-2.0f, 0.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
+	electronMatrixArray[2] = glm::translate(vec3(0.0f, -2.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
+	orbitPathsMatrixArray[0] = glm::rotate(0.01f, vec3(1.0f, 0.0f, 0.0f));
 
 }
 
@@ -170,13 +263,29 @@ static void render_scene()
 
 	glUseProgram(g_shaderProgramID);	// use the shaders associated with the shader program
 
-	glBindVertexArray(g_VAO);		// make VAO active
+	glBindVertexArray(g_VAO[0]);		// make VAO active
 
-	glm::mat4 MVP = g_projectionMatrix * g_viewMatrix * g_modelMatrix;
+	glm::mat4 MVP = g_projectionMatrix * g_viewMatrix * nucleusMatrix;
 	// set uniform model transformation matrix
 	glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
 
-	glDrawArrays(GL_TRIANGLES, 0, g_mesh.numberOfVertices);
+	glDrawArrays(GL_TRIANGLES, 0, nucleusMesh.numberOfVertices);
+
+	for (int i = 0; i < 3; i++) {
+		glBindVertexArray(g_VAO[i+1]);
+
+		MVP = g_projectionMatrix * g_viewMatrix * electronMatrixArray[i];
+		// set uniform model transformation matrix
+		glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+
+		glDrawArrays(GL_TRIANGLES, 0, electronMesh[i].numberOfVertices);
+	}
+
+	glBindVertexArray(g_VAO[4]);
+	MVP = g_projectionMatrix * g_viewMatrix * orbitPathsMatrixArray[0];
+	glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+	glDrawArrays(GL_LINE_STRIP, 0, orbitPathMesh[0].numberOfVertices);
+
 
 	glFlush();	// flush the pipeline
 }
@@ -297,12 +406,20 @@ int main(void)
 	}
 
 	// clean up
-	if (g_mesh.pMeshVertices)
-		delete[] g_mesh.pMeshVertices;
+	if (nucleusMesh.pMeshVertices)
+		delete[] nucleusMesh.pMeshVertices;
+
+	if (electronMesh[0].pMeshVertices) {
+		for (int i = 0; i < 3; i++) {
+			delete[] electronMesh[i].pMeshVertices;
+		}
+	
+	}
+	
 
 	glDeleteProgram(g_shaderProgramID);
-	glDeleteBuffers(1, &g_VBO);
-	glDeleteVertexArrays(1, &g_VAO);
+	glDeleteBuffers(vbo_vao_number, g_VBO);
+	glDeleteVertexArrays(vbo_vao_number, g_VAO);
 
 	// uninitialise tweak bar
 	
