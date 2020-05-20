@@ -65,7 +65,7 @@ float electronScale = 0.2f;
 
 bool wireFrame = false;
 
-bool draw_orbit(Mesh* mesh,float centre_x , float centre_y, float centre_z) {
+bool draw_orbit(Mesh* mesh,float* colour) {
 	
 	
 	mesh->pMeshVertices = new Vertex[MAX_VERTICES];
@@ -84,9 +84,9 @@ bool draw_orbit(Mesh* mesh,float centre_x , float centre_y, float centre_z) {
 		mesh->pMeshVertices[i].position[1] = 0.0f;
 		
 		//setting the color of the vertices
-		mesh->pMeshVertices[i].color[0] = 1.0f;
-		mesh->pMeshVertices[i].color[1] = 0.0f;
-		mesh->pMeshVertices[i].color[2] = 0.0f;
+		mesh->pMeshVertices[i].color[0] = colour[0];
+		mesh->pMeshVertices[i].color[1] = colour[1];
+		mesh->pMeshVertices[i].color[2] = colour[2];
 		cout << "x:";
 		cout << mesh->pMeshVertices[i].position[0] << " ";
 		cout << "y:";
@@ -226,19 +226,32 @@ static void init(GLFWwindow* window) {
 	}
 
 
+	//making the orbits easier to differentiate
+	float orbitColour[3][3];
+
+	orbitColour[0][0] = 1.0f;
+	orbitColour[0][1] = 0.0f;
+	orbitColour[0][2] = 0.0f;
+	orbitColour[1][0] = 0.0f;
+	orbitColour[1][1] = 1.0f;
+	orbitColour[1][2] = 0.0f;
+	orbitColour[2][0] = 0.0f;
+	orbitColour[2][1] = 0.0f;
+	orbitColour[2][2] = 1.0f;
 	//orbit Paths
-	orbitPathMesh[0].pMeshVertices = NULL;
-	draw_orbit(&orbitPathMesh[0], 0.0f, 0.0f, 0.0f);
-	glBindVertexArray(g_VAO[4]);
-	glBindBuffer(GL_ARRAY_BUFFER, g_VBO[4]);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * orbitPathMesh[0].numberOfVertices, orbitPathMesh[0].pMeshVertices, GL_STATIC_DRAW);
-	
-	glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
-	glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+	for (int i = 0; i < 3; i++) {
+		orbitPathMesh[0].pMeshVertices = NULL;
+		draw_orbit(&orbitPathMesh[i], orbitColour[i]);
+		glBindVertexArray(g_VAO[i+4]);
+		glBindBuffer(GL_ARRAY_BUFFER, g_VBO[i+4]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * orbitPathMesh[i].numberOfVertices, orbitPathMesh[i].pMeshVertices, GL_STATIC_DRAW);
 
-	glEnableVertexAttribArray(positionIndex); // enable vertex attributes
-	glEnableVertexAttribArray(colorIndex);
+		glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
+		glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
 
+		glEnableVertexAttribArray(positionIndex); // enable vertex attributes
+		glEnableVertexAttribArray(colorIndex);
+	}
 
 }
 
@@ -248,10 +261,12 @@ static void init(GLFWwindow* window) {
 static void update_scene() {
 	
 	//currently moves the electrons to where they start in the scene
-	electronMatrixArray[0] = glm::translate(vec3(2.0f, 1.0f, 0.0f))* glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
+	electronMatrixArray[0] = glm::translate(vec3(1.5f, 0.8f, 0.0f))* glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
 	electronMatrixArray[1] = glm::translate(vec3(-2.0f, 0.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
-	electronMatrixArray[2] = glm::translate(vec3(0.0f, -2.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
-	orbitPathsMatrixArray[0] = glm::rotate(0.01f, vec3(1.0f, 0.0f, 0.0f));
+	electronMatrixArray[2] = glm::translate(vec3(-0.8f, -1.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
+	orbitPathsMatrixArray[0] = glm::rotate(0.1f, vec3(1.0f, 0.0f, 0.0f));
+	orbitPathsMatrixArray[1] = glm::rotate(1.0f, vec3(1.0f, -1.0f, 0.0f));
+	orbitPathsMatrixArray[2] = glm::rotate(1.0f, vec3(0.0f, 0.2f, 1.0f));
 
 }
 
@@ -281,10 +296,16 @@ static void render_scene()
 		glDrawArrays(GL_TRIANGLES, 0, electronMesh[i].numberOfVertices);
 	}
 
-	glBindVertexArray(g_VAO[4]);
-	MVP = g_projectionMatrix * g_viewMatrix * orbitPathsMatrixArray[0];
-	glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
-	glDrawArrays(GL_LINE_STRIP, 0, orbitPathMesh[0].numberOfVertices);
+
+	for (int i = 0; i < 3; i++) {
+		
+		glBindVertexArray(g_VAO[i+4]);
+		MVP = g_projectionMatrix * g_viewMatrix * orbitPathsMatrixArray[i];
+		glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+		glDrawArrays(GL_LINE_STRIP, 0, orbitPathMesh[i].numberOfVertices);
+	
+	}
+	
 
 
 	glFlush();	// flush the pipeline
