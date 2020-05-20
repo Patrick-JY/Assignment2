@@ -142,6 +142,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="ColorFS.frag" />
+    <None Include="simpleColorFS.frag" />
+    <None Include="SimpleColorVS.vert" />
     <None Include="VS.vert" />
   </ItemGroup>
   <ItemGroup>

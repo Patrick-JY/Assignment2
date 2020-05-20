@@ -21,6 +21,12 @@
     <None Include="VS.vert">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="simpleColorFS.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="SimpleColorVS.vert">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="shader.cpp">

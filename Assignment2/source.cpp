@@ -32,7 +32,7 @@ using namespace glm;	// to avoid having to use glm::
 typedef struct Vertex
 {
 	GLfloat position[3];
-	GLfloat color[3];
+	GLfloat normal[3];
 } Vertex;
 
 //mesh properties
@@ -40,32 +40,78 @@ typedef struct Mesh
 {
 	Vertex* pMeshVertices; //points to mesh vertices
 	GLint numberOfVertices; //number of vertices in the mesh
+	GLint* pMeshIndices;
+	GLint numberOfFaces;
 } Mesh;
+
+// light and material structs
+typedef struct Light {
+	vec3 position;
+	vec3 ambient;
+	vec3 diffuse;
+	vec3 specular;
+};
+
+typedef struct Material {
+	vec3 ambient;
+	vec3 diffuse;
+	vec3 specular;
+	float shininess;
+};
+
 
 //Global Vars
 const int vbo_vao_number = 7; //needed to make sure I clean up everything properly
 
 Mesh nucleusMesh;
 Mesh electronMesh[3];
-Mesh orbitPathMesh[3]; 
+Mesh orbitPathMesh[3];
+
+GLuint g_IBO[vbo_vao_number];			// index buffer object identifier
 GLuint g_VBO[vbo_vao_number];
 GLuint g_VAO[vbo_vao_number];
 GLuint g_shaderProgramID = 0;
+GLuint orbit_shaderProgram = 0;
 GLuint g_MVP_Index = 0;
+GLuint orbit_MVP_Index = 0;
+GLuint g_MV_Index = 0;
+GLuint g_V_Index = 0;
+GLuint g_lightPositionIndex = 0;
+GLuint g_lightAmbientIndex = 0;
+GLuint g_lightDiffuseIndex = 0;
+GLuint g_lightSpecularIndex = 0;
+GLuint g_materialAmbientIndex = 0;
+GLuint g_materialDiffuseIndex = 0;
+GLuint g_materialSpecularIndex = 0;
+GLuint g_materialShininessIndex = 0;
+
+GLuint electron_materialAmbient = 0;
+GLuint electron_materialDiffuseIndex = 0;
+GLuint electron_materialSpecularIndex = 0;
+GLuint electron_materialShininessIndex = 0;
+
 glm::mat4 nucleusMatrix;
 glm::mat4 electronMatrixArray[3]; //making these an array because it seems more convenient
 glm::mat4 orbitPathsMatrixArray[3]; //same ^
 glm::mat4 g_viewMatrix;
 glm::mat4 g_projectionMatrix;
 
+Light g_light;	//light properties
+
+// material properties
+Material g_material; //material for nucleus
+//Material orbit_material; //material for orbits currently unused since I opted to just use a different shader program
+Material electron_material;
+
 GLuint g_windowWidth = 800; //window dimensions
 GLuint g_windowHeight = 600;
 
-float electronScale = 0.2f;
+float electronScale = 0.2f;			//I like to render everything the same and then change after to fit the scene
+
 
 bool wireFrame = false;
 
-bool draw_orbit(Mesh* mesh,float* colour) {
+bool draw_orbit(Mesh* mesh) {
 	
 	
 	mesh->pMeshVertices = new Vertex[MAX_VERTICES];
@@ -83,10 +129,10 @@ bool draw_orbit(Mesh* mesh,float* colour) {
 		mesh->pMeshVertices[i].position[2] = 2.0f * sin(angle);
 		mesh->pMeshVertices[i].position[1] = 0.0f;
 		
-		//setting the color of the vertices
-		mesh->pMeshVertices[i].color[0] = colour[0];
-		mesh->pMeshVertices[i].color[1] = colour[1];
-		mesh->pMeshVertices[i].color[2] = colour[2];
+		//setting the color of the vertices, the variable is still "normal" however I am using a different shader for the orbit paths which treats it as colour
+		mesh->pMeshVertices[i].normal[0] = 0.5f;
+		mesh->pMeshVertices[i].normal[1] = 0.0f;
+		mesh->pMeshVertices[i].normal[2] = 0.0f;
 		cout << "x:";
 		cout << mesh->pMeshVertices[i].position[0] << " ";
 		cout << "y:";
@@ -101,8 +147,10 @@ bool draw_orbit(Mesh* mesh,float* colour) {
 //mesh load function as seen in tuts
 bool load_mesh(const char* fileName, Mesh* mesh) {
 	// load file with assimp
-	const aiScene* pScene = aiImportFile(fileName, aiProcess_Triangulate);
+	const aiScene* pScene = aiImportFile(fileName, aiProcess_Triangulate | aiProcess_GenSmoothNormals
+	| aiProcess_JoinIdenticalVertices);
 
+	
 	//checks whether the scene was loaded
 	if (!pScene) {
 		cout << "Could not load mesh." << endl;
@@ -127,10 +175,40 @@ bool load_mesh(const char* fileName, Mesh* mesh) {
 			mesh->pMeshVertices[i].position[1] = (GLfloat)pVertexPos->y;
 			mesh->pMeshVertices[i].position[2] = (GLfloat)pVertexPos->z;
 
-			// (CHANGE THIS) since we have no lighting, give each vertex a random colour (CHANGE THIS)
-			mesh->pMeshVertices[i].color[0] = static_cast<double>(rand()) / RAND_MAX;
-			mesh->pMeshVertices[i].color[1] = static_cast<double>(rand()) / RAND_MAX;
-			mesh->pMeshVertices[i].color[2] = static_cast<double>(rand()) / RAND_MAX;
+		}
+	}
+	
+	// if mesh contains normals
+	if (pMesh->HasNormals())
+	{
+		// read normals and store in the array
+		for (int i = 0; i < pMesh->mNumVertices; i++)
+		{
+			const aiVector3D* pVertexNormal = &(pMesh->mNormals[i]);
+
+			mesh->pMeshVertices[i].normal[0] = (GLfloat)pVertexNormal->x;
+			mesh->pMeshVertices[i].normal[1] = (GLfloat)pVertexNormal->y;
+			mesh->pMeshVertices[i].normal[2] = (GLfloat)pVertexNormal->z;
+		}
+	}
+	
+	// if mesh contains faces
+	if (pMesh->HasFaces())
+	{
+		// store number of mesh faces
+		mesh->numberOfFaces = pMesh->mNumFaces;
+
+		// allocate memory for vertices
+		mesh->pMeshIndices = new GLint[pMesh->mNumFaces * 3];
+
+		// read normals and store in the array
+		for (int i = 0; i < pMesh->mNumFaces; i++)
+		{
+			const aiFace* pFace = &(pMesh->mFaces[i]);
+
+			mesh->pMeshIndices[i * 3] = (GLint)pFace->mIndices[0];
+			mesh->pMeshIndices[i * 3 + 1] = (GLint)pFace->mIndices[1];
+			mesh->pMeshIndices[i * 3 + 2] = (GLint)pFace->mIndices[2];
 		}
 	}
 
@@ -144,18 +222,42 @@ bool load_mesh(const char* fileName, Mesh* mesh) {
 
 
 static void init(GLFWwindow* window) {
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	//glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
 	glEnable(GL_DEPTH_TEST);
 
-	//create and compile our GLSL program from the shader files
+	//create and compile our GLSL programs from the shader files
 	g_shaderProgramID = loadShaders("VS.vert", "ColorFS.frag");
+	orbit_shaderProgram = loadShaders("simpleColorVS.vert", "simpleColorFS.frag");
 
 	//find the location of shader vars
 	GLuint positionIndex = glGetAttribLocation(g_shaderProgramID, "aPosition");
-	GLuint colorIndex = glGetAttribLocation(g_shaderProgramID, "aColor");
+	GLuint normalIndex = glGetAttribLocation(g_shaderProgramID, "aNormal");
 	g_MVP_Index = glGetUniformLocation(g_shaderProgramID, "uModelViewProjectionMatrix");
+	g_MV_Index = glGetUniformLocation(g_shaderProgramID, "uModelViewMatrix");
+	g_V_Index = glGetUniformLocation(g_shaderProgramID, "uViewMatrix");
 
+
+	g_lightPositionIndex = glGetUniformLocation(g_shaderProgramID, "uLight.position");
+	g_lightAmbientIndex = glGetUniformLocation(g_shaderProgramID, "uLight.ambient");
+	g_lightDiffuseIndex = glGetUniformLocation(g_shaderProgramID, "uLight.diffuse");
+	g_lightSpecularIndex = glGetUniformLocation(g_shaderProgramID, "uLight.specular");
+
+
+	g_materialAmbientIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.ambient");
+	g_materialDiffuseIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.diffuse");
+	g_materialSpecularIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.specular");
+	g_materialShininessIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.shininess");
+
+	electron_materialAmbient = glGetUniformLocation(g_shaderProgramID, "uMaterial.ambient");
+	electron_materialDiffuseIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.diffuse");
+	electron_materialSpecularIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.specular");
+	electron_materialShininessIndex = glGetUniformLocation(g_shaderProgramID, "uMaterial.shininess");
+
+
+	GLuint orbitPositionIndex = glGetAttribLocation(orbit_shaderProgram, "aPosition");
+	GLuint orbitColorIndex = glGetAttribLocation(orbit_shaderProgram, "aColor");
+	orbit_MVP_Index = glGetUniformLocation(orbit_shaderProgram, "uModelViewProjectionMatrix");
 
 	//init model matrices
 	nucleusMatrix = mat4(1.0f);
@@ -180,10 +282,31 @@ static void init(GLFWwindow* window) {
 	//initialise vbo and vao
 	glGenBuffers(vbo_vao_number, g_VBO);
 	glGenVertexArrays(vbo_vao_number, g_VAO);
+	glGenBuffers(vbo_vao_number, g_IBO);
 	
-	
-	
+	// initialise point light properties
+	g_light.position = glm::vec3(10.0f, 10.0f, 10.0f);
+	g_light.ambient = glm::vec3(0.2f, 0.2f, 0.2f);
+	g_light.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
+	g_light.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
+	// initialise material properties
+	g_material.ambient = glm::vec3(1.0f, 1.0f, 1.0f);
+	g_material.diffuse = glm::vec3(0.2f, 0.7f, 1.0f);
+	g_material.specular = glm::vec3(0.2f, 0.7f, 1.0f);
+	g_material.shininess = 10.0f;
+	
+	/*
+	orbit_material.ambient = vec3(1.0f, 1.0f, 1.0f);
+	orbit_material.diffuse = vec3(1.0f, 0.0f, 0.0f);
+	orbit_material.specular = vec3(1.0f, 0.0f, 0.0f);
+	orbit_material.shininess = 0.0f;
+	*/
+
+	electron_material.ambient = glm::vec3(1.0f, 1.0f, 1.0f);
+	electron_material.diffuse = glm::vec3(1.0f, 0.2f, 0.2f);
+	electron_material.specular = glm::vec3(0.6f, 0.1f, 1.0f);
+	electron_material.shininess = 10.0f;
 
 	//Creating the nucleus
 	
@@ -196,12 +319,18 @@ static void init(GLFWwindow* window) {
 	glBindBuffer(GL_ARRAY_BUFFER, g_VBO[0]);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * nucleusMesh.numberOfVertices, nucleusMesh.pMeshVertices, GL_STATIC_DRAW);
 
+	// generate identifier for IBO and copy data to GPU
+	
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_IBO[0]);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLint) * 3 * nucleusMesh.numberOfFaces, nucleusMesh.pMeshIndices, GL_STATIC_DRAW);
 
+	glBindBuffer(GL_ARRAY_BUFFER, g_VBO[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_IBO[0]);
 	glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
-	glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+	glVertexAttribPointer(normalIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, normal)));
 
 	glEnableVertexAttribArray(positionIndex); // enable vertex attributes
-	glEnableVertexAttribArray(colorIndex);
+	glEnableVertexAttribArray(normalIndex);
 
 
 
@@ -217,40 +346,39 @@ static void init(GLFWwindow* window) {
 		glBindBuffer(GL_ARRAY_BUFFER, g_VBO[i+1]);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * electronMesh[i].numberOfVertices, electronMesh[i].pMeshVertices, GL_STATIC_DRAW);
 
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_IBO[i+1]);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLint) * 3 * electronMesh[i].numberOfFaces, electronMesh[i].pMeshIndices, GL_STATIC_DRAW);
 
+		glBindBuffer(GL_ARRAY_BUFFER, g_VBO[i+1]);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_IBO[i+1]);
 		glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
-		glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+		glVertexAttribPointer(normalIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, normal)));
 
 		glEnableVertexAttribArray(positionIndex); // enable vertex attributes
-		glEnableVertexAttribArray(colorIndex);
+		glEnableVertexAttribArray(normalIndex);
 	}
 
 
-	//making the orbits easier to differentiate
-	float orbitColour[3][3];
-
-	orbitColour[0][0] = 1.0f;
-	orbitColour[0][1] = 0.0f;
-	orbitColour[0][2] = 0.0f;
-	orbitColour[1][0] = 0.0f;
-	orbitColour[1][1] = 1.0f;
-	orbitColour[1][2] = 0.0f;
-	orbitColour[2][0] = 0.0f;
-	orbitColour[2][1] = 0.0f;
-	orbitColour[2][2] = 1.0f;
+	
+	
 	//orbit Paths
 	for (int i = 0; i < 3; i++) {
 		orbitPathMesh[0].pMeshVertices = NULL;
-		draw_orbit(&orbitPathMesh[i], orbitColour[i]);
+		draw_orbit(&orbitPathMesh[i]);
 		glBindVertexArray(g_VAO[i+4]);
 		glBindBuffer(GL_ARRAY_BUFFER, g_VBO[i+4]);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * orbitPathMesh[i].numberOfVertices, orbitPathMesh[i].pMeshVertices, GL_STATIC_DRAW);
 
-		glVertexAttribPointer(positionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
-		glVertexAttribPointer(colorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, color)));
+		
 
-		glEnableVertexAttribArray(positionIndex); // enable vertex attributes
-		glEnableVertexAttribArray(colorIndex);
+
+		glBindBuffer(GL_ARRAY_BUFFER, g_VBO[i + 4]);
+		
+		glVertexAttribPointer(orbitPositionIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, position)));
+		glVertexAttribPointer(orbitColorIndex, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, normal)));
+
+		glEnableVertexAttribArray(orbitPositionIndex); // enable vertex attributes
+		glEnableVertexAttribArray(orbitColorIndex);
 	}
 
 }
@@ -281,27 +409,58 @@ static void render_scene()
 	glBindVertexArray(g_VAO[0]);		// make VAO active
 
 	glm::mat4 MVP = g_projectionMatrix * g_viewMatrix * nucleusMatrix;
+	glm::mat4 MV = g_viewMatrix * nucleusMatrix;
 	// set uniform model transformation matrix
 	glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+	glUniformMatrix4fv(g_MV_Index, 1, GL_FALSE, &MV[0][0]);
+	glUniformMatrix4fv(g_V_Index, 1, GL_FALSE, &g_viewMatrix[0][0]);
 
-	glDrawArrays(GL_TRIANGLES, 0, nucleusMesh.numberOfVertices);
+	glUniform3fv(g_lightPositionIndex, 1, &g_light.position[0]);
+	glUniform3fv(g_lightAmbientIndex, 1, &g_light.ambient[0]);
+	glUniform3fv(g_lightDiffuseIndex, 1, &g_light.diffuse[0]);
+	glUniform3fv(g_lightSpecularIndex, 1, &g_light.specular[0]);
+
+	glUniform3fv(g_materialAmbientIndex, 1, &g_material.ambient[0]);
+	glUniform3fv(g_materialDiffuseIndex, 1, &g_material.diffuse[0]);
+	glUniform3fv(g_materialSpecularIndex, 1, &g_material.specular[0]);
+	glUniform1fv(g_materialShininessIndex, 1, &g_material.shininess);
+	
+	glDrawElements(GL_TRIANGLES, nucleusMesh.numberOfFaces*3,GL_UNSIGNED_INT,0);
 
 	for (int i = 0; i < 3; i++) {
 		glBindVertexArray(g_VAO[i+1]);
 
 		MVP = g_projectionMatrix * g_viewMatrix * electronMatrixArray[i];
+		MV = g_viewMatrix * electronMatrixArray[i];
 		// set uniform model transformation matrix
 		glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+		glUniformMatrix4fv(g_MV_Index, 1, GL_FALSE, &MV[0][0]);
+		glUniformMatrix4fv(g_V_Index, 1, GL_FALSE, &g_viewMatrix[0][0]);
 
-		glDrawArrays(GL_TRIANGLES, 0, electronMesh[i].numberOfVertices);
+		glUniform3fv(g_lightPositionIndex, 1, &g_light.position[0]);
+		glUniform3fv(g_lightAmbientIndex, 1, &g_light.ambient[0]);
+		glUniform3fv(g_lightDiffuseIndex, 1, &g_light.diffuse[0]);
+		glUniform3fv(g_lightSpecularIndex, 1, &g_light.specular[0]);
+
+		glUniform3fv(electron_materialAmbient, 1, &electron_material.ambient[0]);
+		glUniform3fv(electron_materialDiffuseIndex, 1, &electron_material.diffuse[0]);
+		glUniform3fv(electron_materialSpecularIndex, 1, &electron_material.specular[0]);
+		glUniform1fv(electron_materialShininessIndex, 1, &electron_material.shininess);
+
+		glDrawElements(GL_TRIANGLES, electronMesh[i].numberOfFaces * 3, GL_UNSIGNED_INT, 0);
 	}
 
+	
 
+	glUseProgram(orbit_shaderProgram);
 	for (int i = 0; i < 3; i++) {
 		
 		glBindVertexArray(g_VAO[i+4]);
 		MVP = g_projectionMatrix * g_viewMatrix * orbitPathsMatrixArray[i];
-		glUniformMatrix4fv(g_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+		
+		// set uniform model transformation matrix
+		glUniformMatrix4fv(orbit_MVP_Index, 1, GL_FALSE, &MVP[0][0]);
+		
 		glDrawArrays(GL_LINE_STRIP, 0, orbitPathMesh[i].numberOfVertices);
 	
 	}
@@ -439,6 +598,8 @@ int main(void)
 	
 
 	glDeleteProgram(g_shaderProgramID);
+	glDeleteProgram(orbit_shaderProgram);
+	glDeleteBuffers(vbo_vao_number, g_IBO);
 	glDeleteBuffers(vbo_vao_number, g_VBO);
 	glDeleteVertexArrays(vbo_vao_number, g_VAO);
 
