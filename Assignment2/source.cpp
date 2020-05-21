@@ -500,11 +500,30 @@ static void error_callback(int error, const char* description)
 	cerr << description << endl;	// output error description
 }
 
+
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+
+}
+
+static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	// pass mouse data to tweak bar
+	TwEventMousePosGLFW(xpos, ypos);
+}
+
+static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+	TwEventMouseButtonGLFW(button, action);
+}
+
+
+
 //main method
 int main(void)
 {
 	GLFWwindow* window = NULL;	// pointer to a GLFW window handle
-	
+	TwBar* TweakBar;
+
 	double lastUpdateTime = glfwGetTime();	// last update time
 	double elapsedTime = lastUpdateTime;	// time elapsed since last update
 	double frameTime = 0.0f;				// frame time
