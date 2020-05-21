@@ -107,6 +107,7 @@ GLuint g_windowWidth = 800; //window dimensions
 GLuint g_windowHeight = 600;
 
 float electronScale = 0.2f;			//I like to render everything the same and then change after to fit the scene
+float g_orbitSpeed = 0.3f;
 
 
 bool wireFrame = false;
@@ -291,9 +292,9 @@ static void init(GLFWwindow* window) {
 	g_light.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
 	// initialise material properties
-	g_material.ambient = glm::vec3(1.0f, 1.0f, 1.0f);
+	g_material.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 	g_material.diffuse = glm::vec3(0.2f, 0.7f, 1.0f);
-	g_material.specular = glm::vec3(0.2f, 0.7f, 1.0f);
+	g_material.ambient = glm::vec3(0.2f, 0.7f, 1.0f);
 	g_material.shininess = 10.0f;
 	
 	/*
@@ -303,8 +304,8 @@ static void init(GLFWwindow* window) {
 	orbit_material.shininess = 0.0f;
 	*/
 
-	electron_material.ambient = glm::vec3(1.0f, 1.0f, 1.0f);
-	electron_material.diffuse = glm::vec3(1.0f, 0.2f, 0.2f);
+	electron_material.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
+	electron_material.ambient = glm::vec3(1.0f, 0.2f, 0.2f);
 	electron_material.specular = glm::vec3(0.6f, 0.1f, 1.0f);
 	electron_material.shininess = 10.0f;
 
@@ -380,25 +381,33 @@ static void init(GLFWwindow* window) {
 		glEnableVertexAttribArray(orbitPositionIndex); // enable vertex attributes
 		glEnableVertexAttribArray(orbitColorIndex);
 	}
-
+	//putting the camera at the correct angle
+	g_projectionMatrix = rotate(g_projectionMatrix, 0.5f, vec3(1.0f, 0.0f, 0.0f));
+	g_projectionMatrix = translate(g_projectionMatrix, vec3(0.0f, -3.0f, 0.0f));
 }
 
 
 // function used to update the scene
 
 static void update_scene() {
+	static float orbitAngle = 0.0f;
+	float scaleFactor = 0.1;
+	//currently moves the electrons to where they start in the scene and also making them orbit
+
 	
-	//currently moves the electrons to where they start in the scene
-	electronMatrixArray[0] = glm::translate(vec3(1.5f, 0.8f, 0.0f))* glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
-	electronMatrixArray[1] = glm::translate(vec3(-2.0f, 0.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
-	electronMatrixArray[2] = glm::translate(vec3(-0.8f, -1.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));;
-	orbitPathsMatrixArray[0] = glm::rotate(0.1f, vec3(1.0f, 0.0f, 0.0f));
-	orbitPathsMatrixArray[1] = glm::rotate(1.0f, vec3(1.0f, -1.0f, 0.0f));
-	orbitPathsMatrixArray[2] = glm::rotate(1.0f, vec3(0.0f, 0.2f, 1.0f));
+
+	orbitAngle += g_orbitSpeed * scaleFactor;
+	electronMatrixArray[1] = glm::rotate(orbitAngle, vec3(0.0f, 1.0f, 0.0f)) * glm::translate(vec3(2.0f, 0.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));
+	electronMatrixArray[2] = glm::rotate(orbitAngle,vec3(-1.0f,1.0f,0.0f))* glm::translate(vec3(0.0f, -0.0f, 2.0f))* glm::scale(glm::vec3(electronScale, electronScale, electronScale));
+	orbitPathsMatrixArray[0] = glm::rotate(1.0f, vec3(0.0f, 1.0f, 0.0f));
+	orbitPathsMatrixArray[1] = glm::rotate(1.0f, vec3(-2.0f, 5.0f, 6.5f));
+	orbitPathsMatrixArray[2] = glm::rotate(1.0f, vec3(2.0f,5.0f, -6.5f));
+
+
+	electronMatrixArray[0] = glm::rotate(orbitAngle,vec3(1.0f,1.0f,0.0f)) *  glm::translate(vec3(-1.4f, 1.4f, 0.0f))
+		* glm::scale(glm::vec3(electronScale, electronScale, electronScale));
 
 }
-
-
 
 static void render_scene()
 {
@@ -407,7 +416,7 @@ static void render_scene()
 	glUseProgram(g_shaderProgramID);	// use the shaders associated with the shader program
 
 	glBindVertexArray(g_VAO[0]);		// make VAO active
-
+	
 	glm::mat4 MVP = g_projectionMatrix * g_viewMatrix * nucleusMatrix;
 	glm::mat4 MV = g_viewMatrix * nucleusMatrix;
 	// set uniform model transformation matrix
