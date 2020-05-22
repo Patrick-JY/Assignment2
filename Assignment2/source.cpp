@@ -97,6 +97,9 @@ glm::mat4 g_viewMatrix;
 glm::mat4 g_projectionMatrix;
 
 Light g_light;	//light properties
+float g_light_x = 10.0f;
+float g_light_y = 10.0f;
+float g_light_z = 10.0f;
 
 // material properties
 Material g_material; //material for nucleus
@@ -108,6 +111,14 @@ GLuint g_windowHeight = 600;
 
 float electronScale = 0.2f;			//I like to render everything the same and then change after to fit the scene
 float g_orbitSpeed = 0.3f;
+
+//nucleus mat properties
+float nucleus_shininess = 10.0f;
+float nucleus_specular[] = { 1.0f, 1.0f, 1.0f };
+
+//electron mat properties
+float electron_shininess = 10.0f;
+float electron_diffuse[] = { 1.0f, 1.0f, 1.0f };
 
 
 bool wireFrame = false;
@@ -286,16 +297,17 @@ static void init(GLFWwindow* window) {
 	glGenBuffers(vbo_vao_number, g_IBO);
 	
 	// initialise point light properties
-	g_light.position = glm::vec3(10.0f, 10.0f, 10.0f);
+	g_light.position = glm::vec3(g_light_x, g_light_y, g_light_z);
 	g_light.ambient = glm::vec3(0.2f, 0.2f, 0.2f);
 	g_light.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
 	g_light.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
 	// initialise material properties
-	g_material.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+	g_material.specular = glm::vec3(nucleus_specular[0],nucleus_specular[1],nucleus_specular[2]);
+	
 	g_material.diffuse = glm::vec3(0.2f, 0.7f, 1.0f);
 	g_material.ambient = glm::vec3(0.2f, 0.7f, 1.0f);
-	g_material.shininess = 10.0f;
+	g_material.shininess = nucleus_shininess;
 	
 	/*
 	orbit_material.ambient = vec3(1.0f, 1.0f, 1.0f);
@@ -304,10 +316,10 @@ static void init(GLFWwindow* window) {
 	orbit_material.shininess = 0.0f;
 	*/
 
-	electron_material.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
+	electron_material.diffuse = glm::vec3(electron_diffuse[0], electron_diffuse[1], electron_diffuse[2]);
 	electron_material.ambient = glm::vec3(1.0f, 0.2f, 0.2f);
 	electron_material.specular = glm::vec3(0.6f, 0.1f, 1.0f);
-	electron_material.shininess = 10.0f;
+	electron_material.shininess = electron_shininess;
 
 	//Creating the nucleus
 	
@@ -394,8 +406,14 @@ static void update_scene() {
 	float scaleFactor = 0.1;
 	//currently moves the electrons to where they start in the scene and also making them orbit
 
-	
+	g_material.specular = glm::vec3(nucleus_specular[0], nucleus_specular[1], nucleus_specular[2]);
+	electron_material.diffuse = glm::vec3(electron_diffuse[0], electron_diffuse[1], electron_diffuse[2]);
 
+	g_material.shininess = nucleus_shininess;
+	electron_material.shininess = electron_shininess;
+
+
+	g_light.position = glm::vec3(g_light_x, g_light_y, g_light_z);
 	orbitAngle += g_orbitSpeed * scaleFactor;
 	electronMatrixArray[1] = glm::rotate(orbitAngle, vec3(0.0f, 1.0f, 0.0f)) * glm::translate(vec3(2.0f, 0.0f, 0.0f)) * glm::scale(glm::vec3(electronScale, electronScale, electronScale));
 	electronMatrixArray[2] = glm::rotate(orbitAngle,vec3(-1.0f,1.0f,0.0f))* glm::translate(vec3(0.0f, -0.0f, 2.0f))* glm::scale(glm::vec3(electronScale, electronScale, electronScale));
@@ -502,9 +520,6 @@ static void error_callback(int error, const char* description)
 
 
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-
-}
 
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
 {
@@ -568,13 +583,44 @@ int main(void)
 
 	// set key callback function
 	glfwSetKeyCallback(window, key_callback);
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
+	glfwSetCursorPosCallback(window, cursor_position_callback);
+
+
+	//initialise AntTweakBar
+	TwInit(TW_OPENGL_CORE, NULL);
+	
+	//give tweak bar the size of graphics window
+	TwWindowSize(g_windowWidth, g_windowHeight);
+	TwDefine("TW_HELP visible=false ");
+	TwDefine("GLOBAL fontsize = 3");
+	
+	//create a tweak bar
+	TweakBar = TwNewBar("Main");
+	TwDefine("Main label = 'Assignment 2 GUI' refresh = 0.02 text = light size = '220 500'");
+
+	// create display entries
+	//create Display
+	TwAddVarRW(TweakBar, "Wireframe", TW_TYPE_BOOLCPP, &wireFrame, " group='Display' ");
+
+	//create Frame Statistics
+	TwAddVarRW(TweakBar, "FPS", TW_TYPE_INT32, &FPS, "group = Frame");
+	TwAddVarRW(TweakBar, "Frame Time", TW_TYPE_DOUBLE, &frameTime, "group = Frame precision = 4");
 	
 
+	//Create Light Frame
+	TwAddVarRW(TweakBar, "Position x", TW_TYPE_FLOAT, &g_light_x, "group = Light");
+	TwAddVarRW(TweakBar, "Position y", TW_TYPE_FLOAT, &g_light_y, "group = Light");
+	TwAddVarRW(TweakBar, "Position z", TW_TYPE_FLOAT, &g_light_z, "group = Light");
 
+	//Create Nucleus Frame
+	TwAddVarRW(TweakBar, "n_Shininess", TW_TYPE_FLOAT, &nucleus_shininess, "label =  'Shininess' group = Nucleus");
+	TwAddVarRW(TweakBar, "Specular Colour", TW_TYPE_COLOR3F, &nucleus_specular, " label='Specular Colour' group='Nucleus'");
 	
-
 	
-
+	//Create Electron Frame
+	TwAddVarRW(TweakBar, "e_Shininess", TW_TYPE_FLOAT, &electron_shininess, "label = 'Shininess' group = 'Electron'");
+	TwAddVarRW(TweakBar, "Diffuse Colour", TW_TYPE_COLOR3F, &electron_diffuse, " label='Diffuse Colour' group='Electron'");
 
 	// initialise rendering states
 	init(window);
@@ -592,7 +638,7 @@ int main(void)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 		
-
+		TwDraw();
 		glfwSwapBuffers(window);	// swap buffers
 		glfwPollEvents();			// poll for events
 
@@ -633,7 +679,7 @@ int main(void)
 
 	// uninitialise tweak bar
 	
-
+	TwTerminate();
 	// close the window and terminate GLFW
 	glfwDestroyWindow(window);
 	glfwTerminate();
